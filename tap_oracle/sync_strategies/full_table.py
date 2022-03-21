@@ -114,7 +114,7 @@ def query_thread(select_sql, conn, counter, singer, state):
    conn.close()
 
    
-def sync_table(conn_config, stream, state, desired_columns):
+def sync_table(conn_config, stream, state, desired_columns, partition_column, partitions):
    connection = orc_db.open_connection(conn_config)
    connection.outputtypehandler = common.OutputTypeHandler
 
@@ -163,22 +163,21 @@ def sync_table(conn_config, stream, state, desired_columns):
          select_sql      = """SELECT min({}),max({})
                                 FROM {}.{}
                                WHERE ORA_ROWSCN >= {}
-                               """.format(config['partition_field'],
-                                          config['partition_field'],
+                               """.format(partition_column,
+                                          partition_column,
                                            escaped_schema,
                                            escaped_table,
                                            ora_rowscn)
       else:
          select_sql      = """SELECT min({}),max({})
-                                FROM {}.{}""".format(config['partition_field'],
-                                          config['partition_field'],
+                                FROM {}.{}""".format(partition_column,
+                                           partition_column,
                                            escaped_schema,
                                            escaped_table,
                                            ora_rowscn)
       cur.execute(select_sql)
       min_date, max_date = cur.fetchall()[0]
-      parts = int(config.get('partitions',1))
-      where_clauses = get_where_clauses(min_date, max_date, parts) 
+      where_clauses = get_where_clauses(min_date, max_date, partitions) 
       
       if ora_rowscn:
          base_query = """SELECT {}, ORA_ROWSCN
