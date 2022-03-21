@@ -549,7 +549,8 @@ def main_impl():
 
    elif args.catalog:
       state = args.state
-      do_sync(conn_config, args.catalog, args.config.get('default_replication_method'), state)
+      new_state = do_sync(conn_config, args.catalog, args.config.get('default_replication_method'), state)
+      singer.write_state(new_state)
    else:
       LOGGER.info("No properties were selected")
 
