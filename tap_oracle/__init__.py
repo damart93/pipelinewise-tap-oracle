@@ -52,11 +52,7 @@ FLOAT_TYPES = set([
 ])
 
 REQUIRED_CONFIG_KEYS = [
-    'sid',
-    'host',
-    'port',
-    'user',
-    'password'
+    'connection_string'
 ]
 
 DEFAULT_NUMERIC_PRECISION=38
@@ -538,14 +534,7 @@ def do_sync(conn_config, catalog, default_replication_method, state):
 def main_impl():
    args = utils.parse_args(REQUIRED_CONFIG_KEYS)
 
-   '''conn_config = {'user': args.config['user'],
-                  'password': args.config['password'],
-                  'host': args.config['host'],
-                  'port': args.config['port'],
-                  'sid':  args.config['sid'],
-                  'connection_string':  args.config['connection_string']}'''
-   conn_config = args.config
-
+   conn_config = { 'connection_string':  args.config['connection_string']}
 
    if args.discover:
       filter_schemas_prop = args.config.get('filter_schemas')
