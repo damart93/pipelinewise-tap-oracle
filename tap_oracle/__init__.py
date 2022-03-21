@@ -541,7 +541,8 @@ def main_impl():
                   'password': args.config['password'],
                   'host': args.config['host'],
                   'port': args.config['port'],
-                  'sid':  args.config['sid']}
+                  'sid':  args.config['sid'],
+                  'connection_string':  args.config['connection_string'],}
 
 
    if args.discover:
