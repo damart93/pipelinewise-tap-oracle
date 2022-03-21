@@ -537,12 +537,14 @@ def do_sync(conn_config, catalog, default_replication_method, state):
 
 def main_impl():
    args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-   conn_config = {'user': args.config['user'],
+
+   '''conn_config = {'user': args.config['user'],
                   'password': args.config['password'],
                   'host': args.config['host'],
                   'port': args.config['port'],
                   'sid':  args.config['sid'],
-                  'connection_string':  args.config['connection_string'],}
+                  'connection_string':  args.config['connection_string']}'''
+   conn_config = args.config
 
 
    if args.discover:
