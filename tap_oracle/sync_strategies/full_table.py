@@ -11,6 +11,8 @@ import pdb
 import time
 import decimal
 import cx_Oracle
+from datetime import datetime, timedelta
+import threading
 
 LOGGER = singer.get_logger()
 
@@ -73,6 +75,45 @@ def sync_view(conn_config, stream, state, desired_columns):
    connection.close()
    return state
 
+def get_separation_dates(min_date, max_date, parts):
+   microseconds_diff = int( (max_date - min_date) / timedelta(microseconds=1) )
+   dates = [ min_date + timedelta(microseconds=i) for i in range(0, microseconds_diff, int(microseconds_diff / parts) ) ] + [ max_date ]
+   where_clauses = []
+   for i in range(len(dates) - 1):
+         where_clauses.append(f" AND FEHO_INI BETWEEN to_timestamp('{dates[i].isoformat()}') AND to_timestamp('{dates[i+1].isoformat()}') ")
+   return where_clauses
+
+def query_thread(select_sql, conn, counter, singer, state):
+   
+   cur = conn.cursor()
+   cur.execute("ALTER SESSION SET TIME_ZONE = '00:00'")
+   cur.execute("""ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS."00+00:00"'""")
+   cur.execute("""ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD"T"HH24:MI:SSXFF"+00:00"'""")
+   cur.execute("""ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT  = 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'""")
+   
+   rows_saved = 0
+   LOGGER.info("select %s", select_sql)
+   for row in cur.execute(select_sql):
+      ora_rowscn = row[-1]
+      row = row[:-1]
+      record_message = common.row_to_singer_message(stream,
+                                                    row,
+                                                    nascent_stream_version,
+                                                    desired_columns,
+                                                    time_extracted)
+
+      singer.write_message(record_message)
+      state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', ora_rowscn)
+      rows_saved = rows_saved + 1
+      if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
+         singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+      counter.increment()
+      
+   cur.close()
+   conn.close()
+
+   
 def sync_table(conn_config, stream, state, desired_columns):
    connection = orc_db.open_connection(conn_config)
    connection.outputtypehandler = common.OutputTypeHandler
@@ -100,7 +141,7 @@ def sync_table(conn_config, stream, state, desired_columns):
                                  nascent_stream_version)
    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
-   # cur = connection.cursor()
+   cur = connection.cursor()
    md = metadata.to_map(stream.metadata)
    schema_name = md.get(()).get('schema-name')
 
@@ -116,42 +157,61 @@ def sync_table(conn_config, stream, state, desired_columns):
 
    with metrics.record_counter(None) as counter:
       ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
+      #START POINT, GET MAX_MIN DATES
       if ora_rowscn:
          LOGGER.info("Resuming Full Table replication %s from ORA_ROWSCN %s", nascent_stream_version, ora_rowscn)
-         select_sql      = """SELECT {}, ORA_ROWSCN
+         select_sql      = """SELECT min({}),max({})
                                 FROM {}.{}
                                WHERE ORA_ROWSCN >= {}
-                               ORDER BY ORA_ROWSCN ASC
-                                """.format(','.join(escaped_columns),
+                               """.format(config['partition_field'],
+                                          config['partition_field'],
                                            escaped_schema,
                                            escaped_table,
                                            ora_rowscn)
       else:
-         select_sql      = """SELECT {}, ORA_ROWSCN
+         select_sql      = """SELECT min({}),max({})
+                                FROM {}.{}""".format(config['partition_field'],
+                                          config['partition_field'],
+                                           escaped_schema,
+                                           escaped_table,
+                                           ora_rowscn)
+      cur.execute(select_sql)
+      min_date, max_date = cur.fetchall()[0]
+      parts = config.get('partitions',1)
+      where_clauses = get_where_clauses(min_date, max_date, parts) 
+      
+      if ora_rowscn:
+         base_query = """SELECT {}, ORA_ROWSCN
                                 FROM {}.{}
-                               ORDER BY ORA_ROWSCN ASC""".format(','.join(escaped_columns),
+                               WHERE ORA_ROWSCN >= {} AND """.format(','.join(escaped_columns),
+                                           escaped_schema,
+                                           escaped_table,
+                                           ora_rowscn)
+         order_clause = "ORDER BY ORA_ROWSCN ASC"
+      else:
+         base_query = """SELECT {}, ORA_ROWSCN
+                                FROM {}.{}
+                                WHERE """.format(','.join(escaped_columns),
                                                                     escaped_schema,
                                                                     escaped_table)
-
+         order_clause = "ORDER BY ORA_ROWSCN ASC"
+         
+      threads=[]
+      global rows_saved
       rows_saved = 0
-      LOGGER.info("select %s", select_sql)
-      for row in cur.execute(select_sql):
-         ora_rowscn = row[-1]
-         row = row[:-1]
-         record_message = common.row_to_singer_message(stream,
-                                                       row,
-                                                       nascent_stream_version,
-                                                       desired_columns,
-                                                       time_extracted)
-
-         singer.write_message(record_message)
-         state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', ora_rowscn)
-         rows_saved = rows_saved + 1
-         if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
-            singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
-
-         counter.increment()
-
+      for where in where_clauses:
+          
+          thread = threading.Thread(target = query_thread, kwargs = {"select_sql" : base_query + where + order_clause,
+                                                                     "conn" : conn,
+                                                                     "counter" :counter,
+                                                                     "singer" : singer,
+                                                                     "state" : state}
+                                                                     , daemon = True)
+          thread.start()
+          threads.append(thread)
+            
+      for thread in threads:
+         thread.join()
 
    state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', None)
    #always send the activate version whether first run or subsequent
