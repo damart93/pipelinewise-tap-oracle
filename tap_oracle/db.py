@@ -12,5 +12,8 @@ def make_dsn(config):
 def open_connection(config):
     LOGGER.info("dsn: %s", config["connection_string"])
     #conn = cx_Oracle.connect(config["user"], config["password"], make_dsn(config))
-    conn = cx_Oracle.connect(user="hr", password=userpwd, dsn=config["connection_string"])
+    if "connection_string" in config:
+        conn = cx_Oracle.connect(user="hr", password=userpwd, dsn=config["connection_string"])
+    else:
+        conn = cx_Oracle.connect(config["user"], config["password"], make_dsn(config))
     return conn
