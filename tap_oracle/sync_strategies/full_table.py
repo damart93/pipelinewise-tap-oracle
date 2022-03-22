@@ -272,7 +272,7 @@ def sync_table(config, stream, state, desired_columns):
       singer.write_message(activate_version_message)
       
    if "partition_column_type" in config:
-      state = partition_strategy("date-time", config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
+      state = partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
    else:   
       state = no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
    
