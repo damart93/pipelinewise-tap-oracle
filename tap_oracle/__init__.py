@@ -294,9 +294,9 @@ def discover_columns(connection, table_info, filter_schemas):
 def dump_catalog(catalog):
    catalog.dump()
 
-def do_discovery(conn_config, filter_schemas):
+def do_discovery(config, filter_schemas):
    LOGGER.info("starting discovery")
-   connection = orc_db.open_connection(conn_config)
+   connection = orc_db.open_connection(config)
    cur = connection.cursor()
 
    row_counts = produce_row_counts(connection, filter_schemas)
@@ -353,7 +353,7 @@ def is_selected_via_metadata(stream):
    return table_md.get('selected')
 
 #Possible state keys: replication_key, replication_key_value, version
-def do_sync_incremental(conn_config, stream, state, desired_columns):
+def do_sync_incremental(config, stream, state, desired_columns):
    md_map = metadata.to_map(stream.metadata)
    replication_key = md_map.get((), {}).get('replication-key')
    if not replication_key:
@@ -369,7 +369,7 @@ def do_sync_incremental(conn_config, stream, state, desired_columns):
    state = singer.write_bookmark(state, stream.tap_stream_id, 'replication_key', replication_key)
 
    common.send_schema_message(stream, [replication_key])
-   state = incremental.sync_table(conn_config, stream, state, desired_columns)
+   state = incremental.sync_table(config, stream, state, desired_columns)
 
    return state
 
@@ -443,14 +443,14 @@ def sync_method_for_streams(streams, state, default_replication_method):
 
    return lookup, traditional_streams, logical_streams
 
-def sync_log_miner_streams(conn_config, log_miner_streams, state, end_scn):
+def sync_log_miner_streams(config, log_miner_streams, state, end_scn):
    if log_miner_streams:
       log_miner_streams = list(map(log_miner.add_automatic_properties, log_miner_streams))
-      state = log_miner.sync_tables(conn_config, log_miner_streams, state, end_scn)
+      state = log_miner.sync_tables(config, log_miner_streams, state, end_scn)
 
    return state
 
-def sync_traditional_stream(conn_config, stream, state, sync_method, end_scn):
+def sync_traditional_stream(config, stream, state, sync_method, end_scn):
    LOGGER.info("Beginning sync of stream(%s) with sync method(%s)", stream.tap_stream_id, sync_method)
    md_map = metadata.to_map(stream.metadata)
    desired_columns = [c for c in stream.schema.properties.keys() if common.should_sync_column(md_map, c)]
@@ -464,9 +464,9 @@ def sync_traditional_stream(conn_config, stream, state, sync_method, end_scn):
       state = singer.set_currently_syncing(state, stream.tap_stream_id)
       common.send_schema_message(stream, [])
       if md_map.get((), {}).get('is-view'):
-         state = full_table.sync_view(conn_config, stream, state, desired_columns)
+         state = full_table.sync_view(config, stream, state, desired_columns)
       else:
-         state = full_table.sync_table(conn_config, stream, state, desired_columns)
+         state = full_table.sync_table(config, stream, state, desired_columns)
    elif sync_method == 'log_initial':
       #start off with full-table replication
       state = singer.set_currently_syncing(state, stream.tap_stream_id)
@@ -475,15 +475,15 @@ def sync_traditional_stream(conn_config, stream, state, sync_method, end_scn):
       state = singer.write_bookmark(state, stream.tap_stream_id, 'scn', end_scn)
 
       common.send_schema_message(stream, [])
-      state = full_table.sync_table(conn_config, stream, state, desired_columns)
+      state = full_table.sync_table(config, stream, state, desired_columns)
    elif sync_method == 'log_initial_interrupted':
       LOGGER.info("Initial stage of full table sync was interrupted. resuming...")
       state = singer.set_currently_syncing(state, stream.tap_stream_id)
       common.send_schema_message(stream, [])
-      state = full_table.sync_table(conn_config, stream, state, desired_columns)
+      state = full_table.sync_table(config, stream, state, desired_columns)
    elif sync_method == 'incremental':
       state = singer.set_currently_syncing(state, stream.tap_stream_id)
-      state = do_sync_incremental(conn_config, stream, state, desired_columns)
+      state = do_sync_incremental(config, stream, state, desired_columns)
 
    else:
       raise Exception("unknown sync method {} for stream {}".format(sync_method, stream.tap_stream_id))
@@ -501,7 +501,7 @@ def any_logical_streams(streams, default_replication_method):
 
     return False
 
-def do_sync(conn_config, catalog, default_replication_method, state):
+def do_sync(config, catalog, default_replication_method, state):
    currently_syncing = singer.get_currently_syncing(state)
    streams = list(filter(is_selected_via_metadata, catalog.streams))
    streams.sort(key=lambda s: s.tap_stream_id)
@@ -509,7 +509,7 @@ def do_sync(conn_config, catalog, default_replication_method, state):
 
    if any_logical_streams(streams, default_replication_method):
       LOGGER.info("Use of log_miner requires fetching current scn...")
-      end_scn = log_miner.fetch_current_scn(conn_config)
+      end_scn = log_miner.fetch_current_scn(config)
       LOGGER.info("End SCN: %s ", end_scn)
    else:
       end_scn = None
@@ -528,28 +528,24 @@ def do_sync(conn_config, catalog, default_replication_method, state):
       LOGGER.info("No currently_syncing found")
 
    for stream in traditional_streams:
-      state = sync_traditional_stream(conn_config, stream, state, sync_method_lookup[stream.tap_stream_id], end_scn)
+      state = sync_traditional_stream(config, stream, state, sync_method_lookup[stream.tap_stream_id], end_scn)
 
-   state = sync_log_miner_streams(conn_config, list(logical_streams), state, end_scn)
+   state = sync_log_miner_streams(config, list(logical_streams), state, end_scn)
    return state
 
 def main_impl():
    args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-
-   conn_config = { 'user':  args.config['user'],
-                   'password':  args.config['password'],
-                   'connection_string':  args.config['connection_string']}
 
    if args.discover:
       filter_schemas_prop = args.config.get('filter_schemas')
       filter_schemas = []
       if args.config.get('filter_schemas'):
          filter_schemas = args.config.get('filter_schemas').split(',')
-      do_discovery(conn_config, filter_schemas)
+      do_discovery(args.config, filter_schemas)
 
    elif args.catalog:
       state = args.state
-      do_sync(conn_config, args.catalog, args.config.get('default_replication_method'), state)
+      do_sync(args.config, args.catalog, args.config.get('default_replication_method'), state)
    else:
       LOGGER.info("No properties were selected")
 
