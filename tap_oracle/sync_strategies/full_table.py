@@ -75,7 +75,7 @@ def sync_view(config, stream, state, desired_columns):
    connection.close()
    return state
 
-def where_clauses_datetime(column_name, min_val, max_val, parts):
+def where_clauses_integer(column_name, min_val, max_val, parts):
    diff = max_val - min_val
    if diff < parts:
        parts = diff
