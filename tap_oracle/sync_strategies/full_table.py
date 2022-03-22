@@ -106,7 +106,7 @@ def query_thread(select_sql, config, params):
                                                     params['time_extracted'])
 
       singer.write_message(record_message)
-      state = singer.write_bookmark(params['state'], stream.tap_stream_id, 'ORA_ROWSCN', params['ora_rowscn'])
+      state = singer.write_bookmark(params['state'], params['stream'].tap_stream_id, 'ORA_ROWSCN', params['ora_rowscn'])
       rows_saved = rows_saved + 1
       if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
          singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
