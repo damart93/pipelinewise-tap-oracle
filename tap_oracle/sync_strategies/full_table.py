@@ -18,8 +18,8 @@ LOGGER = singer.get_logger()
 
 UPDATE_BOOKMARK_PERIOD = 1000
 
-def sync_view(conn_config, stream, state, desired_columns):
-   connection = orc_db.open_connection(conn_config)
+def sync_view(config, stream, state, desired_columns):
+   connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
 
    cur = connection.cursor()
@@ -80,7 +80,7 @@ def get_separation_dates(min_date, max_date, parts):
    dates = [ min_date + timedelta(microseconds=i) for i in range(0, microseconds_diff, int(microseconds_diff / parts) ) ] + [ max_date ]
    where_clauses = []
    for i in range(len(dates) - 1):
-         where_clauses.append(f" AND FEHO_INI BETWEEN to_timestamp('{dates[i].isoformat()}') AND to_timestamp('{dates[i+1].isoformat()}') ")
+         where_clauses.append(f" FEHO_INI BETWEEN to_timestamp('{dates[i].isoformat()}') AND to_timestamp('{dates[i+1].isoformat()}') ")
    return where_clauses
 
 def query_thread(select_sql, conn, counter, singer, state):
@@ -114,15 +114,11 @@ def query_thread(select_sql, conn, counter, singer, state):
    conn.close()
 
    
-def sync_table(conn_config, stream, state, desired_columns, partition_column, partitions):
-   connection = orc_db.open_connection(conn_config)
+def sync_table(config, stream, state, desired_columns):
+   connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
 
    cur = connection.cursor()
-   cur.execute("ALTER SESSION SET TIME_ZONE = '00:00'")
-   cur.execute("""ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS."00+00:00"'""")
-   cur.execute("""ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD"T"HH24:MI:SSXFF"+00:00"'""")
-   cur.execute("""ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT  = 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'""")
    time_extracted = utils.now()
 
    #before writing the table version to state, check if we had one to begin with
@@ -163,21 +159,21 @@ def sync_table(conn_config, stream, state, desired_columns, partition_column, pa
          select_sql      = """SELECT min({}),max({})
                                 FROM {}.{}
                                WHERE ORA_ROWSCN >= {}
-                               """.format(partition_column,
-                                          partition_column,
+                               """.format(config['partition_column'],
+                                          config['partition_column'],
                                            escaped_schema,
                                            escaped_table,
                                            ora_rowscn)
       else:
          select_sql      = """SELECT min({}),max({})
-                                FROM {}.{}""".format(partition_column,
-                                           partition_column,
+                                FROM {}.{}""".format(config['partition_column'],
+                                           config['partition_column'],
                                            escaped_schema,
                                            escaped_table,
                                            ora_rowscn)
       cur.execute(select_sql)
       min_date, max_date = cur.fetchall()[0]
-      where_clauses = get_where_clauses(min_date, max_date, partitions) 
+      where_clauses = get_where_clauses(min_date, max_date, config['partitions']) 
       
       if ora_rowscn:
          base_query = """SELECT {}, ORA_ROWSCN
@@ -186,28 +182,28 @@ def sync_table(conn_config, stream, state, desired_columns, partition_column, pa
                                            escaped_schema,
                                            escaped_table,
                                            ora_rowscn)
-         order_clause = "ORDER BY ORA_ROWSCN ASC"
       else:
          base_query = """SELECT {}, ORA_ROWSCN
                                 FROM {}.{}
                                 WHERE """.format(','.join(escaped_columns),
                                                                     escaped_schema,
                                                                     escaped_table)
-         order_clause = "ORDER BY ORA_ROWSCN ASC"
          
+      order_clause = "ORDER BY ORA_ROWSCN ASC"
       threads=[]
       global rows_saved
       rows_saved = 0
+      
       for where in where_clauses:
           
-          thread = threading.Thread(target = query_thread, kwargs = {"select_sql" : base_query + where + order_clause,
+         thread = threading.Thread(target = query_thread, kwargs = {"select_sql" : base_query + where + order_clause,
                                                                      "conn" : conn,
                                                                      "counter" :counter,
                                                                      "singer" : singer,
                                                                      "state" : state}
                                                                      , daemon = True)
-          thread.start()
-          threads.append(thread)
+         thread.start()
+         threads.append(thread)
             
       for thread in threads:
          thread.join()
