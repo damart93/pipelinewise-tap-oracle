@@ -512,7 +512,7 @@ def do_sync(config, catalog, default_replication_method, state):
        for stream in streams:
            dict_stream = stream.to_dict()
            if config["partition_column"] not in dict_stream["schema"]["properties"]:
-               raise Exception("Partition column: %s not found in selected stream %s", config["partition_column"], dict_stream["tap_stream_id"])
+               raise Exception("Partition column: {} not found in selected stream {}".format(config["partition_column"], dict_stream["tap_stream_id"]))
            else:
                if "integer" in dict_stream["schema"]["properties"][config["partition_column"]]["type"]:
                    column_type = "integer" 
@@ -520,9 +520,9 @@ def do_sync(config, catalog, default_replication_method, state):
                     if dict_stream["schema"]["properties"][config["partition_column"]]["format"] == "date-time":
                         column_type= "date-time"
                else:
-                   raise Exception("Partition column: %s is not integer or date in selected stream %s", config["partition_column"], dict_stream["tap_stream_id"])
+                   raise Exception("Partition column: {} is not integer or date in selected stream {}".format(config["partition_column"], dict_stream["tap_stream_id"]))
                if config["partition_column_type"] != "" and config["partition_column_type"] != column_type:
-                   raise Exception("Partition column: %s is a different data type in some of the selected streams", config["partition_column"])
+                   raise Exception("Partition column: {} is a different data type in some of the selected streams".format(config["partition_column"]))
             
    if any_logical_streams(streams, default_replication_method):
       LOGGER.info("Use of log_miner requires fetching current scn...")
