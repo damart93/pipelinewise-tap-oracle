@@ -130,7 +130,7 @@ def query_thread(select_sql, config, counter, params):
    cur.close()
    connection.close()
    
-def partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version):
+def partition_strategy(config, connection, stream, state, desired_columns):
    
    time_extracted = utils.now()
 
@@ -223,7 +223,7 @@ def partition_strategy(config, connection, stream, state, desired_columns, escap
          
       return state 
        
-def no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version): 
+def no_partition_strategy(config, connection, stream, state, desired_columns): 
 
    time_extracted = utils.now()
 
