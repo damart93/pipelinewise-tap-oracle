@@ -523,7 +523,7 @@ def do_sync(config, catalog, default_replication_method, state):
                    raise Exception("Partition column: {} is not integer or date in selected stream {}".format(config["partition_column"], dict_stream["tap_stream_id"]))
                if config["partition_column_type"] != "" and config["partition_column_type"] != column_type:
                    raise Exception("Partition column: {} is a different data type in some of the selected streams".format(config["partition_column"]))
-           config["partition_column"] = column_type
+           config["partition_column_type"] = column_type
            
    if any_logical_streams(streams, default_replication_method):
       LOGGER.info("Use of log_miner requires fetching current scn...")
