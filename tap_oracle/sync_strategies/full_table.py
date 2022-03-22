@@ -75,7 +75,7 @@ def sync_view(config, stream, state, desired_columns):
    connection.close()
    return state
 
-def get_separation_dates(min_date, max_date, parts):
+def get_where_clauses(min_date, max_date, parts):
    microseconds_diff = int( (max_date - min_date) / timedelta(microseconds=1) )
    dates = [ min_date + timedelta(microseconds=i) for i in range(0, microseconds_diff, int(microseconds_diff / parts) ) ] + [ max_date ]
    where_clauses = []
