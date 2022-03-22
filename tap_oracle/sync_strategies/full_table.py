@@ -221,7 +221,7 @@ def partition_strategy(config, connection, stream, state, desired_columns):
       for thread in threads:
          thread.join()
          
-      return state 
+      return state, activate_version_message 
        
 def no_partition_strategy(config, connection, stream, state, desired_columns): 
 
@@ -295,7 +295,7 @@ def no_partition_strategy(config, connection, stream, state, desired_columns):
 
          counter.increment()
      
-   return state
+   return state, activate_version_message
 
 def sync_table(config, stream, state, desired_columns):
    
@@ -306,9 +306,9 @@ def sync_table(config, stream, state, desired_columns):
    LOGGER.info("%s", config["partition_column_type"])
    
    if "partition_column_type" in config:
-      state = partition_strategy(config, connection, stream, state, desired_columns)
+      state, activate_version_message = partition_strategy(config, connection, stream, state, desired_columns)
    else:   
-      state = no_partition_strategy(config, connection, stream, state, desired_columns)
+      state, activate_version_message = no_partition_strategy(config, connection, stream, state, desired_columns)
    
    state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', None)
    #always send the activate version whether first run or subsequent
