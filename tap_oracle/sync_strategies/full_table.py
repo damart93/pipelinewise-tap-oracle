@@ -155,7 +155,7 @@ def partition_strategy(config, connection, stream, state, desired_columns, escap
       min_val, max_val = cur.fetchall()[0]
       if config["partition_column_type"] == "date-time":
          where_clauses = where_clauses_datetime(config["partition_column_type"], min_val, max_val, int(config['partitions'])) 
-      else
+      else:
          where_clauses = where_clauses_integer(config["partition_column_type"], min_val, max_val, int(config['partitions'])) 
          
       if ora_rowscn:
