@@ -86,6 +86,8 @@ def get_where_clauses(min_date, max_date, parts):
 def query_thread(select_sql, config, params):
    
    locals().update(params)
+   LOGGER.info(select_sql)
+   LOGGER.info(config)
    LOGGER.info(params)
    LOGGER.info(state)
    LOGGER.info(nascent_stream_version)
