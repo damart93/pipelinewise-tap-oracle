@@ -85,6 +85,7 @@ def get_where_clauses(min_date, max_date, parts):
 
 def query_thread(select_sql, config, counter, singer, state):
 
+   LOGGER.info("Inicio hilo")
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
    cur = connection.cursor()
