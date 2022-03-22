@@ -173,7 +173,7 @@ def sync_table(config, stream, state, desired_columns):
                                            ora_rowscn)
       cur.execute(select_sql)
       min_date, max_date = cur.fetchall()[0]
-      where_clauses = get_where_clauses(min_date, max_date, config['partitions']) 
+      where_clauses = get_where_clauses(min_date, max_date, int(config['partitions'])) 
       
       if ora_rowscn:
          base_query = """SELECT {}, ORA_ROWSCN
