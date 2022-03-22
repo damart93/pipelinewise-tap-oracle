@@ -85,9 +85,8 @@ def get_where_clauses(min_date, max_date, parts):
 
 def query_thread(select_sql, config, params):
    
-   for key in params:
-      for key,val in d.items():
-        exec(key + '=val')
+   for key,val in params.items():
+      exec(key + '=val')
       
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
