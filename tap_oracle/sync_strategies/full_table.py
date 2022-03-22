@@ -200,7 +200,7 @@ def partition_strategy(config, connection, stream, state, desired_columns):
       else:
          base_query = """SELECT {}, ORA_ROWSCN
                                 FROM {}.{}
-                                WHERE """.format(','.join(escaped_columns),
+                                WHERE coalesce(fecha_modificacion, fecha_alta) >= trunc(sysdate - 5) AND """.format(','.join(escaped_columns),
                                                                     escaped_schema,
                                                                     escaped_table)
          
@@ -272,6 +272,7 @@ def no_partition_strategy(config, connection, stream, state, desired_columns):
       else:
          select_sql      = """SELECT {}, ORA_ROWSCN
                                 FROM {}.{}
+                               WHERE coalesce(fecha_modificacion, fecha_alta) >= trunc(sysdate - 5)
                                ORDER BY ORA_ROWSCN ASC""".format(','.join(escaped_columns),
                                                                     escaped_schema,
                                                                     escaped_table)
