@@ -75,12 +75,26 @@ def sync_view(config, stream, state, desired_columns):
    connection.close()
    return state
 
-def get_where_clauses(min_date, max_date, parts):
+def where_clauses_datetime(column_name, min_val, max_val, parts):
+   diff = max_val - min_val
+   if diff < parts:
+       parts = diff
+   import math
+   intervals = [ min_val + i for i in range(0, diff, int(math.ceil( diff / parts) )) ] + [ max_val ]
+   where_clauses = []
+   for i in range(len(intervals) - 1):
+         where_clauses.append(" {} >= ('{}') AND {} < ('{}') "
+                              .format(column_name, intervals[i], column_name, intervals[i+1]))
+   where_clauses[-1] = where_clauses[-1].replace("<","<=")
+   return where_clauses
+
+def where_clauses_datetime(column_name, min_date, max_date, parts):
    microseconds_diff = int( (max_date - min_date) / timedelta(microseconds=1) )
    dates = [ min_date + timedelta(microseconds=i) for i in range(0, microseconds_diff, int(microseconds_diff / parts) ) ] + [ max_date ]
    where_clauses = []
    for i in range(len(dates) - 1):
-         where_clauses.append(f" FEHO_INI BETWEEN to_timestamp('{dates[i].isoformat()}') AND to_timestamp('{dates[i+1].isoformat()}') ")
+         where_clauses.append(" {} BETWEEN to_timestamp('{}') AND to_timestamp('{}') "
+                              .format(column_name, dates[i].isoformat(), dates[i+1].isoformat()))
    return where_clauses
 
 def query_thread(select_sql, config, counter, params):
@@ -115,9 +129,113 @@ def query_thread(select_sql, config, counter, params):
       
    cur.close()
    connection.close()
-
    
+def partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, ora_rowscn, nascent_stream_version):
+   
+   with metrics.record_counter(None) as counter:
+      ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
+      if ora_rowscn:
+         LOGGER.info("Resuming Full Table replication %s from ORA_ROWSCN %s", nascent_stream_version, ora_rowscn)
+         select_sql      = """SELECT min({}),max({})
+                                FROM {}.{}
+                               WHERE ORA_ROWSCN >= {}
+                               """.format(config['partition_column'],
+                                          config['partition_column'],
+                                           escaped_schema,
+                                           escaped_table,
+                                           ora_rowscn)
+      else:
+         select_sql      = """SELECT min({}),max({})
+                                FROM {}.{}""".format(config['partition_column'],
+                                           config['partition_column'],
+                                           escaped_schema,
+                                           escaped_table,
+                                           ora_rowscn)
+      cur.execute(select_sql)
+      min_val, max_val = cur.fetchall()[0]
+      if config["partition_column_type"] == "date-time":
+         where_clauses = where_clauses_datetime(config["partition_column_type"], min_val, max_val, int(config['partitions'])) 
+      else
+         where_clauses = where_clauses_integer(config["partition_column_type"], min_val, max_val, int(config['partitions'])) 
+         
+      if ora_rowscn:
+         base_query = """SELECT {}, ORA_ROWSCN
+                                FROM {}.{}
+                               WHERE ORA_ROWSCN >= {} AND """.format(','.join(escaped_columns),
+                                           escaped_schema,
+                                           escaped_table,
+                                           ora_rowscn)
+      else:
+         base_query = """SELECT {}, ORA_ROWSCN
+                                FROM {}.{}
+                                WHERE """.format(','.join(escaped_columns),
+                                                                    escaped_schema,
+                                                                    escaped_table)
+         
+      order_clause = "ORDER BY ORA_ROWSCN ASC"
+      threads=[]
+      params = {"counter" : counter,
+                "stream": stream,
+                "state" : state,
+                "nascent_stream_version" : nascent_stream_version,
+                "desired_columns" :  desired_columns,
+                "time_extracted" : time_extracted,
+                "ora_rowscn" : ora_rowscn}
+      for where in where_clauses:
+         thread = threading.Thread(target = query_thread, args = (base_query + where + order_clause, config, counter, params), daemon = True)
+         thread.start()
+         threads.append(thread)
+            
+      for thread in threads:
+         thread.join()
+         
+      return state 
+       
+
+def no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, ora_rowscn, nascent_stream_version): 
+   
+   with metrics.record_counter(None) as counter:
+      ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
+      if ora_rowscn:
+         LOGGER.info("Resuming Full Table replication %s from ORA_ROWSCN %s", nascent_stream_version, ora_rowscn)
+         select_sql      = """SELECT {}, ORA_ROWSCN
+                                FROM {}.{}
+                               WHERE ORA_ROWSCN >= {}
+                               ORDER BY ORA_ROWSCN ASC
+                                """.format(','.join(escaped_columns),
+                                           escaped_schema,
+                                           escaped_table,
+                                           ora_rowscn)
+      else:
+         select_sql      = """SELECT {}, ORA_ROWSCN
+                                FROM {}.{}
+                               ORDER BY ORA_ROWSCN ASC""".format(','.join(escaped_columns),
+                                                                    escaped_schema,
+                                                                    escaped_table)
+
+      rows_saved = 0
+      LOGGER.info("select %s", select_sql)
+      for row in cur.execute(select_sql):
+         ora_rowscn = row[-1]
+         row = row[:-1]
+         record_message = common.row_to_singer_message(stream,
+                                                       row,
+                                                       nascent_stream_version,
+                                                       desired_columns,
+                                                       time_extracted)
+
+         singer.write_message(record_message)
+         state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', ora_rowscn)
+         rows_saved = rows_saved + 1
+         if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
+            singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+         counter.increment()
+     
+    return state
+
 def sync_table(config, stream, state, desired_columns):
+   
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
 
@@ -152,64 +270,12 @@ def sync_table(config, stream, state, desired_columns):
 
    if first_run:
       singer.write_message(activate_version_message)
-
-   with metrics.record_counter(None) as counter:
-      ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
-      #START POINT, GET MAX_MIN DATES
-      if ora_rowscn:
-         LOGGER.info("Resuming Full Table replication %s from ORA_ROWSCN %s", nascent_stream_version, ora_rowscn)
-         select_sql      = """SELECT min({}),max({})
-                                FROM {}.{}
-                               WHERE ORA_ROWSCN >= {}
-                               """.format(config['partition_column'],
-                                          config['partition_column'],
-                                           escaped_schema,
-                                           escaped_table,
-                                           ora_rowscn)
-      else:
-         select_sql      = """SELECT min({}),max({})
-                                FROM {}.{}""".format(config['partition_column'],
-                                           config['partition_column'],
-                                           escaped_schema,
-                                           escaped_table,
-                                           ora_rowscn)
-      cur.execute(select_sql)
-      min_date, max_date = cur.fetchall()[0]
-      where_clauses = get_where_clauses(min_date, max_date, int(config['partitions'])) 
       
-      if ora_rowscn:
-         base_query = """SELECT {}, ORA_ROWSCN
-                                FROM {}.{}
-                               WHERE ORA_ROWSCN >= {} AND """.format(','.join(escaped_columns),
-                                           escaped_schema,
-                                           escaped_table,
-                                           ora_rowscn)
-      else:
-         base_query = """SELECT {}, ORA_ROWSCN
-                                FROM {}.{}
-                                WHERE """.format(','.join(escaped_columns),
-                                                                    escaped_schema,
-                                                                    escaped_table)
-         
-      order_clause = "ORDER BY ORA_ROWSCN ASC"
-      threads=[]
-      global rows_saved
-      rows_saved = 0
-      params = {"counter" : counter,
-                "stream": stream,
-                "state" : state,
-                "nascent_stream_version" : nascent_stream_version,
-                "desired_columns" :  desired_columns,
-                "time_extracted" : time_extracted,
-                "ora_rowscn" : ora_rowscn}
-      for where in where_clauses:
-         thread = threading.Thread(target = query_thread, args = (base_query + where + order_clause, config, counter, params), daemon = True)
-         thread.start()
-         threads.append(thread)
-            
-      for thread in threads:
-         thread.join()
-
+   if "partition_column_type" in config:
+      state = partition_strategy("date-time", config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
+   else:   
+      state = no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
+   
    state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', None)
    #always send the activate version whether first run or subsequent
    singer.write_message(activate_version_message)
