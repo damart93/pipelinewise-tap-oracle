@@ -83,9 +83,9 @@ def get_where_clauses(min_date, max_date, parts):
          where_clauses.append(f" FEHO_INI BETWEEN to_timestamp('{dates[i].isoformat()}') AND to_timestamp('{dates[i+1].isoformat()}') ")
    return where_clauses
 
-def query_thread(select_sql, config, counter, singer, state):
+def query_thread(select_sql, config, params):
 
-   LOGGER.info("Inicio hilo")
+   locals().update(params)
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
    cur = connection.cursor()
@@ -196,10 +196,15 @@ def sync_table(config, stream, state, desired_columns):
       threads=[]
       global rows_saved
       rows_saved = 0
-      
+      params = {"counter" : counter,
+                "stream": stream,
+                "state" : state,
+                "nascent_stream_version" : nascent_stream_version,
+                "desired_columns" :  desired_columns,
+                "time_extracted" : time_extracted,
+                "ora_rowscn" : ora_rowscn}
       for where in where_clauses:
-          
-         thread = threading.Thread(target = query_thread, args = (base_query + where + order_clause, config, counter, singer, state), daemon = True)
+         thread = threading.Thread(target = query_thread, args = (base_query + where + order_clause, config, params), daemon = True)
          thread.start()
          threads.append(thread)
             
