@@ -132,6 +132,38 @@ def query_thread(select_sql, config, counter, params):
    
 def partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version):
    
+   time_extracted = utils.now()
+
+   #before writing the table version to state, check if we had one to begin with
+   first_run = singer.get_bookmark(state, stream.tap_stream_id, 'version') is None
+
+   #pick a new table version IFF we do not have an ORA_ROWSCN in our state
+   #the presence of an ORA_ROWSCN indicates that we were interrupted last time through
+   if singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN') is None:
+      nascent_stream_version = int(time.time() * 1000)
+   else:
+      nascent_stream_version = singer.get_bookmark(state, stream.tap_stream_id, 'version')
+
+   state = singer.write_bookmark(state,
+                                 stream.tap_stream_id,
+                                 'version',
+                                 nascent_stream_version)
+   singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+   cur = connection.cursor()
+   md = metadata.to_map(stream.metadata)
+   schema_name = md.get(()).get('schema-name')
+
+   escaped_columns = map(lambda c: common.prepare_columns_sql(stream, c), desired_columns)
+   escaped_schema  = schema_name
+   escaped_table   = stream.table
+   activate_version_message = singer.ActivateVersionMessage(
+      stream=stream.tap_stream_id,
+      version=nascent_stream_version)
+
+   if first_run:
+      singer.write_message(activate_version_message)
+      
    with metrics.record_counter(None) as counter:
       ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
       if ora_rowscn:
@@ -192,7 +224,39 @@ def partition_strategy(config, connection, stream, state, desired_columns, escap
       return state 
        
 def no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version): 
-   
+
+   time_extracted = utils.now()
+
+   #before writing the table version to state, check if we had one to begin with
+   first_run = singer.get_bookmark(state, stream.tap_stream_id, 'version') is None
+
+   #pick a new table version IFF we do not have an ORA_ROWSCN in our state
+   #the presence of an ORA_ROWSCN indicates that we were interrupted last time through
+   if singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN') is None:
+      nascent_stream_version = int(time.time() * 1000)
+   else:
+      nascent_stream_version = singer.get_bookmark(state, stream.tap_stream_id, 'version')
+
+   state = singer.write_bookmark(state,
+                                 stream.tap_stream_id,
+                                 'version',
+                                 nascent_stream_version)
+   singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+   cur = connection.cursor()
+   md = metadata.to_map(stream.metadata)
+   schema_name = md.get(()).get('schema-name')
+
+   escaped_columns = map(lambda c: common.prepare_columns_sql(stream, c), desired_columns)
+   escaped_schema  = schema_name
+   escaped_table   = stream.table
+   activate_version_message = singer.ActivateVersionMessage(
+      stream=stream.tap_stream_id,
+      version=nascent_stream_version)
+
+   if first_run:
+      singer.write_message(activate_version_message)
+      
    with metrics.record_counter(None) as counter:
       ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
       if ora_rowscn:
@@ -237,43 +301,11 @@ def sync_table(config, stream, state, desired_columns):
    
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
-
-   time_extracted = utils.now()
-
-   #before writing the table version to state, check if we had one to begin with
-   first_run = singer.get_bookmark(state, stream.tap_stream_id, 'version') is None
-
-   #pick a new table version IFF we do not have an ORA_ROWSCN in our state
-   #the presence of an ORA_ROWSCN indicates that we were interrupted last time through
-   if singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN') is None:
-      nascent_stream_version = int(time.time() * 1000)
-   else:
-      nascent_stream_version = singer.get_bookmark(state, stream.tap_stream_id, 'version')
-
-   state = singer.write_bookmark(state,
-                                 stream.tap_stream_id,
-                                 'version',
-                                 nascent_stream_version)
-   singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
-
-   cur = connection.cursor()
-   md = metadata.to_map(stream.metadata)
-   schema_name = md.get(()).get('schema-name')
-
-   escaped_columns = map(lambda c: common.prepare_columns_sql(stream, c), desired_columns)
-   escaped_schema  = schema_name
-   escaped_table   = stream.table
-   activate_version_message = singer.ActivateVersionMessage(
-      stream=stream.tap_stream_id,
-      version=nascent_stream_version)
-
-   if first_run:
-      singer.write_message(activate_version_message)
-      
+   
    if "partition_column_type" in config:
-      state = partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
+      state = partition_strategy(config, connection, stream, state, desired_columns)
    else:   
-      state = no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version)
+      state = no_partition_strategy(config, connection, stream, state, desired_columns)
    
    state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', None)
    #always send the activate version whether first run or subsequent
