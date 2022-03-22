@@ -510,16 +510,17 @@ def do_sync(config, catalog, default_replication_method, state):
    if "partition_column" in config:
        config["partition_column_type"] = ""
        for stream in streams:
-           if config["partition_column"] not in stream["schema"]["properties"]:
-               raise Exception("Partition column: %s not found in selected stream %s", config["partition_column"], stream["tap_stream_id"])
+           dict_stream = stream.to_dict()
+           if config["partition_column"] not in dict_stream["schema"]["properties"]:
+               raise Exception("Partition column: %s not found in selected stream %s", config["partition_column"], dict_stream["tap_stream_id"])
            else:
-               if "integer" in stream["schema"]["properties"][config["partition_column"]]["type"]:
+               if "integer" in dict_stream["schema"]["properties"][config["partition_column"]]["type"]:
                    column_type = "integer" 
-               elif "format" in stream["schema"]["properties"][config["partition_column"]]:
-                    if stream["schema"]["properties"][config["partition_column"]]["format"] == "date-time":
+               elif "format" in dict_stream["schema"]["properties"][config["partition_column"]]:
+                    if dict_stream["schema"]["properties"][config["partition_column"]]["format"] == "date-time":
                         column_type= "date-time"
                else:
-                   raise Exception("Partition column: %s is not integer or date in selected stream %s", config["partition_column"], stream["tap_stream_id"])
+                   raise Exception("Partition column: %s is not integer or date in selected stream %s", config["partition_column"], dict_stream["tap_stream_id"])
                if config["partition_column_type"] != "" and config["partition_column_type"] != column_type:
                    raise Exception("Partition column: %s is a different data type in some of the selected streams", config["partition_column"])
             
