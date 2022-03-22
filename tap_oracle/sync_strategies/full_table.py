@@ -130,7 +130,7 @@ def query_thread(select_sql, config, counter, params):
    cur.close()
    connection.close()
    
-def partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, ora_rowscn, nascent_stream_version):
+def partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version):
    
    with metrics.record_counter(None) as counter:
       ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
@@ -191,8 +191,7 @@ def partition_strategy(config, connection, stream, state, desired_columns, escap
          
       return state 
        
-
-def no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, ora_rowscn, nascent_stream_version): 
+def no_partition_strategy(config, connection, stream, state, desired_columns, escaped_columns, time_extracted, nascent_stream_version): 
    
    with metrics.record_counter(None) as counter:
       ora_rowscn = singer.get_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN')
