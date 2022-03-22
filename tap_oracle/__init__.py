@@ -506,7 +506,23 @@ def do_sync(config, catalog, default_replication_method, state):
    streams = list(filter(is_selected_via_metadata, catalog.streams))
    streams.sort(key=lambda s: s.tap_stream_id)
    LOGGER.info("Selected streams: %s ", list(map(lambda s: s.tap_stream_id, streams)))
-
+    
+   if "partition_column" in config:
+       config["partition_column_type"] = ""
+       for stream in streams:
+           if config["partition_column"] not in stream.schema.properties:
+               raise Exception("Partition column: %s not found in selected stream %s", config["partition_column"], stream.tap_stream_id)
+           else:
+               if "integer" in stream.schema.properties[config["partition_column"]].type:
+                   column_type = "integer" 
+               elif "format" in stream.schema.properties[config["partition_column"]]:
+                    if stream.schema.properties[config["partition_column"]].format == "date-time":
+                        column_type= "date-time"
+               else:
+                   raise Exception("Partition column: %s is not integer or date in selected stream %s", config["partition_column"], stream.tap_stream_id)
+               if config["partition_column_type"] != "" and config["partition_column_type"] != column_type:
+                   raise Exception("Partition column: %s is a different data type in some of the selected streams", config["partition_column"])
+            
    if any_logical_streams(streams, default_replication_method):
       LOGGER.info("Use of log_miner requires fetching current scn...")
       end_scn = log_miner.fetch_current_scn(config)
