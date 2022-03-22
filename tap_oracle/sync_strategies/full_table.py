@@ -84,9 +84,6 @@ def get_where_clauses(min_date, max_date, parts):
    return where_clauses
 
 def query_thread(select_sql, config, params):
-   
-   for key,val in params.items():
-      exec(key + '=val')
       
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
@@ -102,14 +99,14 @@ def query_thread(select_sql, config, params):
    for row in cur.execute(select_sql):
       ora_rowscn = row[-1]
       row = row[:-1]
-      record_message = common.row_to_singer_message(stream,
+      record_message = common.row_to_singer_message(params['stream'],
                                                     row,
-                                                    nascent_stream_version,
-                                                    desired_columns,
-                                                    time_extracted)
+                                                    params['nascent_stream_version'],
+                                                    params['desired_columns'],
+                                                    params['time_extracted'])
 
       singer.write_message(record_message)
-      state = singer.write_bookmark(state, stream.tap_stream_id, 'ORA_ROWSCN', ora_rowscn)
+      state = singer.write_bookmark(params['state'], stream.tap_stream_id, 'ORA_ROWSCN', params['ora_rowscn'])
       rows_saved = rows_saved + 1
       if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
          singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
