@@ -232,7 +232,7 @@ def no_partition_strategy(config, connection, stream, state, desired_columns, es
 
          counter.increment()
      
-    return state
+   return state
 
 def sync_table(config, stream, state, desired_columns):
    
