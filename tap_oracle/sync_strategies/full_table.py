@@ -178,6 +178,7 @@ def partition_strategy(config, connection, stream, state, desired_columns):
                                            ora_rowscn)
       else:
          select_sql      = """SELECT min({}),max({})
+                                WHERE coalesce(fecha_modificacion, fecha_alta) >= trunc(sysdate - 5)
                                 FROM {}.{}""".format(config['partition_column'],
                                            config['partition_column'],
                                            escaped_schema,
