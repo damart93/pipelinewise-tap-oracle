@@ -311,9 +311,6 @@ def sync_table(config, stream, state, desired_columns):
    connection = orc_db.open_connection(config)
    connection.outputtypehandler = common.OutputTypeHandler
    
-   LOGGER.info("%s", config["partition_column"])
-   LOGGER.info("%s", config["partition_column_type"])
-   
    if "partition_column_type" in config:
       state, activate_version_message = partition_strategy(config, connection, stream, state, desired_columns)
    else:   
