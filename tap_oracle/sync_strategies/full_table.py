@@ -109,7 +109,9 @@ def query_thread(select_sql, config, counter, params):
    
    rows_saved = 0
    LOGGER.info("select %s", select_sql)
-   for row in cur.execute(select_sql):
+   cur.execute(select_sql)
+   LOGGER.info("%s - FIN query", threading.current_thread())
+   for row in cur.fetchall():
       ora_rowscn = row[-1]
       row = row[:-1]
       record_message = common.row_to_singer_message(params['stream'],
@@ -125,7 +127,7 @@ def query_thread(select_sql, config, counter, params):
          singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
       counter.increment()
-      
+   LOGGER.info("%s - FIN fetch", threading.current_thread())
    cur.close()
    connection.close()
    
@@ -206,7 +208,7 @@ def partition_strategy(config, connection, stream, state, desired_columns):
                                                                     escaped_table)
          
       order_clause = "ORDER BY ORA_ROWSCN ASC"
-      threads=[]
+      threads = []
       params = {"counter" : counter,
                 "stream": stream,
                 "state" : state,
@@ -214,9 +216,12 @@ def partition_strategy(config, connection, stream, state, desired_columns):
                 "desired_columns" :  desired_columns,
                 "time_extracted" : time_extracted,
                 "ora_rowscn" : ora_rowscn}
+      i = 0
       for where in where_clauses:
          thread = threading.Thread(target = query_thread, args = (base_query + where + order_clause, config, counter, params), daemon = True)
          thread.start()
+         thread.name("HILO {i}")
+         i += 1
          threads.append(thread)
             
       for thread in threads:
