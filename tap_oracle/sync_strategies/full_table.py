@@ -108,11 +108,11 @@ def query_thread(select_sql, config, counter, params):
    cur.execute("""ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT  = 'YYYY-MM-DD"T"HH24:MI:SS.FFTZH:TZM'""")
    
    rows_saved = 0
-   LOGGER.info("select %s", select_sql)
+   LOGGER.info("%s - %s - select %s", datetime.now().isoformat(), threading.current_thread().name, select_sql)
    cur.execute(select_sql)
-   LOGGER.info("%s - FIN query", threading.current_thread())
+   LOGGER.info("%s - %s - FIN query", datetime.now().isoformat(), threading.current_thread().name)
    data = cur.fetchall()
-   LOGGER.info("%s - Total registros %s", threading.current_thread(), len(data))
+   LOGGER.info("%s - %s - Total registros %s", datetime.now().isoformat(), threading.current_thread().name, len(data))
    for row in data:
       ora_rowscn = row[-1]
       row = row[:-1]
@@ -122,14 +122,14 @@ def query_thread(select_sql, config, counter, params):
                                                     params['desired_columns'],
                                                     params['time_extracted'])
 
-      #singer.write_message(record_message)
+      singer.write_message(record_message)
       state = singer.write_bookmark(params['state'], params['stream'].tap_stream_id, 'ORA_ROWSCN', params['ora_rowscn'])
       rows_saved = rows_saved + 1
       if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
          singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
       counter.increment()
-   LOGGER.info("%s - FIN fetch", threading.current_thread())
+   LOGGER.info("%s - %s - FIN fetch", datetime.now().isoformat(), threading.current_thread().name)
    cur.close()
    connection.close()
    
