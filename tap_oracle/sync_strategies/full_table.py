@@ -111,7 +111,9 @@ def query_thread(select_sql, config, counter, params):
    LOGGER.info("select %s", select_sql)
    cur.execute(select_sql)
    LOGGER.info("%s - FIN query", threading.current_thread())
-   for row in cur.fetchall():
+   data = cur.fetchall()
+   LOGGER.info("%s - Total registros {}", threading.current_thread(), len(data))
+   for row in data:
       ora_rowscn = row[-1]
       row = row[:-1]
       record_message = common.row_to_singer_message(params['stream'],
