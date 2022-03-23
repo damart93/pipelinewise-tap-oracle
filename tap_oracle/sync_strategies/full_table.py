@@ -79,11 +79,10 @@ def where_clauses_integer(column_name, min_val, max_val, parts):
    diff = max_val - min_val
    if diff < parts:
        parts = diff
-   import math
-   intervals = [ min_val + i for i in range(0, diff, int(math.ceil( diff / parts) )) ] + [ max_val ]
+   intervals = [ min_val + round(diff / parts * i) for i in range(0, parts) ] + [ max_val ]
    where_clauses = []
    for i in range(len(intervals) - 1):
-         where_clauses.append(" {} >= {} AND {} < {} "
+         where_clauses.append(" AND {} >= {} AND {} < {} "
                               .format(column_name, intervals[i], column_name, intervals[i+1]))
    where_clauses[-1] = where_clauses[-1].replace("<","<=")
    return where_clauses
