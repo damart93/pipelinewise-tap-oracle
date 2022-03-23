@@ -222,7 +222,7 @@ def partition_strategy(config, connection, stream, state, desired_columns):
       for where in where_clauses:
          thread = threading.Thread(target = query_thread, args = (base_query + where + order_clause, config, counter, params), daemon = True)
          thread.start()
-         thread.name(f"HILO {i}")
+         thread.name = f"HILO {i}"
          i += 1
          threads.append(thread)
             
